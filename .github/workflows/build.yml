@@ -1,0 +1,74 @@
+name: Docker image build
+on:
+  workflow_call:
+    inputs:
+      cuda_compiler_version:
+        type: string
+        default: None
+      name:
+        type: string
+        default: None
+    secrets:
+      DOCKERHUB_PASSWORD:
+        required: true
+
+jobs:
+  build:
+    name: ${{ inputs.name }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: .
+          repository: intel-ai/hdk
+
+      - name: Free space
+        run: |
+          sudo rm -rf /usr/local/lib/android/sdk /opt/hostedtoolcache /usr/share/swift /opt/az
+          sudo apt-get purge -y gcc llvm-12 llvm-13 llvm-14
+
+      - name: Set env context
+        run: |
+          echo RUN_STAMP=docker-${{ runner.os }}-${{ inputs.name }} >>$GITHUB_ENV
+          cat docker/Dockerfile docker/Dockerfile.${{ inputs.name }} >Dockerfile
+          echo DOCKER_NAME=dataved/build.${{ inputs.name }}:${{ hashFiles('docker/Dockerfile', 'docker/Dockerfile.${{ inputs.name }}') }} >>$GITHUB_ENV
+
+      - name: Login to image repository
+        uses: docker/login-action@v3
+        with:
+          username: dataved
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Test the image
+        id: test-docker
+        run: |
+          docker run -u ghrunner ${{ env.DOCKER_NAME }} dpkg -l
+        continue-on-error: true
+
+      - name: Set up Docker Buildx
+        id: buildx
+        if: steps.test-docker.outcome != 'success'
+        uses: docker/setup-buildx-action@master
+
+      - name: Cache Docker layers
+        if: steps.test-docker.outcome != 'success'
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+      
+      - name: Build image
+        if: steps.test-docker.outcome != 'success'
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: Dockerfile
+          push: true
+          tags: ${{ env.DOCKER_NAME }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new
+      
+

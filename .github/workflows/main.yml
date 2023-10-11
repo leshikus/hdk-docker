@@ -1,0 +1,32 @@
+name: Build docker images for HDK
+on:
+  workflow_dispatch:
+    inputs:
+      reset-cache:
+        type: boolean
+        default: true
+  push:
+    branches: main
+  pull_request:
+    branches: main
+  schedule:
+    - cron: '51 2 * * *'
+
+jobs:
+  build-cuda:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    with:
+      name: cuda
+      cuda_compiler_version: 12-2
+    secrets:
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}      
+
+  build-l0:
+    name: Build
+    uses: ./.github/workflows/build.yml
+    with:
+      name: l0
+    secrets:
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}      
+
